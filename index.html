@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17202e">
+<title>カード枚数スキャナー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#17202e; --panel:#213047; --line:#34486a; --ink:#eef1f6; --mute:#93a3bd;
+  --gold:#e0b84a; --gold-ink:#2a2208; --warn:#f08a7a;
+  --jp:"Zen Kaku Gothic New",system-ui,sans-serif;
+  --num:"Barlow Condensed","Zen Kaku Gothic New",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--jp);-webkit-tap-highlight-color:transparent}
+body{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+button{font:inherit;color:inherit;border:0;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* カメラ */
+.cam{position:relative;height:44vh;min-height:250px;background:#000;overflow:hidden}
+video{width:100%;height:100%;object-fit:cover;display:block}
+.guide{position:absolute;left:50%;top:50%;width:74%;aspect-ratio:5/1;transform:translate(-50%,-50%);
+  box-shadow:0 0 0 100vmax rgba(0,0,0,.5);border-radius:4px}
+.guide i{position:absolute;width:20px;height:20px;border:3px solid var(--gold)}
+.guide i:nth-child(1){left:-3px;top:-3px;border-right:0;border-bottom:0}
+.guide i:nth-child(2){right:-3px;top:-3px;border-left:0;border-bottom:0}
+.guide i:nth-child(3){left:-3px;bottom:-3px;border-right:0;border-top:0}
+.guide i:nth-child(4){right:-3px;bottom:-3px;border-left:0;border-top:0}
+.guide.hit i{border-color:#fff}
+.hint{position:absolute;left:0;right:0;bottom:12px;text-align:center;font-size:13px;color:#dfe6f2}
+.camtools{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:10px;display:flex;gap:8px}
+.camtools button{background:rgba(23,32,46,.8);padding:8px 12px;border-radius:18px;font-size:13px}
+.camtools button[aria-pressed="true"]{background:var(--gold);color:var(--gold-ink)}
+.start{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);padding:24px;text-align:center}
+.start p{color:var(--mute);font-size:14px;line-height:1.7;margin:0 0 18px}
+.start button{background:var(--gold);color:var(--gold-ink);font-weight:700;padding:14px 28px;border-radius:10px;font-size:17px}
+
+/* 読み取り結果 */
+.read{display:flex;align-items:center;gap:12px;padding:14px 16px 8px}
+.code{flex:1;min-width:0;font-family:var(--num);font-weight:700;font-size:42px;line-height:1;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.code.hit{color:var(--gold)}
+.add{background:var(--gold);color:var(--gold-ink);font-weight:700;font-size:18px;padding:14px 18px;border-radius:12px;min-width:92px}
+.add:disabled{opacity:.35}
+.status{padding:0 16px;font-size:12px;color:var(--mute);min-height:1.4em}
+.flash{animation:flash .45s ease-out}
+@keyframes flash{from{background:rgba(224,184,74,.35)}to{background:transparent}}
+
+.opts{padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.opts .lbl{font-size:12px;color:var(--mute);width:100%}
+.chip{background:var(--panel);padding:8px 13px;border-radius:8px;font-size:14px;border:1px solid var(--line)}
+.chip[aria-pressed="true"]{background:var(--gold);color:var(--gold-ink);border-color:var(--gold);font-weight:700}
+.manual{display:flex;gap:8px;padding:4px 16px 12px}
+.manual input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px 12px;font:500 18px var(--num);text-transform:uppercase}
+.manual button{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:0 14px;font-size:14px}
+
+/* 一覧 */
+.sum{display:flex;justify-content:space-between;align-items:baseline;padding:14px 16px 6px;border-top:1px solid var(--line)}
+.sum h2{margin:0;font-size:15px}
+.sum span{font-family:var(--num);font-size:20px;color:var(--mute)}
+ul{list-style:none;margin:0;padding:0 16px}
+li{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+li .c{font:700 22px var(--num);flex:1;min-width:0}
+li .r{font-size:12px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+li .n{font:700 24px var(--num);width:34px;text-align:right}
+li button{background:var(--panel);width:36px;height:36px;border-radius:8px;font-size:18px}
+.empty{color:var(--mute);font-size:14px;padding:18px 16px;line-height:1.7}
+
+/* 下部バー */
+.bar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));
+  background:rgba(23,32,46,.96);border-top:1px solid var(--line)}
+.bar button{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 4px;font-size:14px}
+.bar .danger{flex:.6;color:var(--warn)}
+@media (prefers-reduced-motion:reduce){.flash{animation:none}}
+</style>
+</head>
+<body>
+
+<section class="cam">
+  <video id="video" playsinline muted></video>
+  <div class="guide" id="guide"><i></i><i></i><i></i><i></i></div>
+  <div class="hint">収録番号（例 QCCP-JP001）を枠いっぱいに合わせてください</div>
+  <div class="camtools">
+    <button id="torch" hidden aria-pressed="false">ライト</button>
+    <button id="pause" aria-pressed="false">一時停止</button>
+  </div>
+  <div class="start" id="start">
+    <div>
+      <p>カメラに映した収録番号をこの端末の中で読み取り、<br>枚数を数えます。写真は保存も送信もしません。</p>
+      <button id="startBtn">カメラを起動</button>
+    </div>
+  </div>
+</section>
+
+<div class="read" id="readRow">
+  <div class="code" id="code">――</div>
+  <button class="add" id="add" disabled>＋1</button>
+</div>
+<div class="status" id="status">OCRエンジンは初回のみ読み込みに数秒かかります</div>
+
+<div class="opts">
+  <div class="lbl">読み取り方</div>
+  <button class="chip" data-mode="auto">自動で数える</button>
+  <button class="chip" data-mode="manual">＋1で確定</button>
+</div>
+<div class="opts" id="rarities">
+  <div class="lbl">レアリティ（次に追加するカードに付きます）</div>
+</div>
+<div class="manual">
+  <input id="manualInput" placeholder="読めない時は手入力" autocomplete="off" autocapitalize="characters">
+  <button id="manualAdd">追加</button>
+</div>
+
+<div class="sum"><h2>読み取ったカード</h2><span id="total">0種類 / 0枚</span></div>
+<ul id="list"></ul>
+<div class="empty" id="empty">まだありません。カードを1枚ずつ枠に合わせていくと、ここに収録番号ごとの枚数がたまっていきます。</div>
+
+<div class="bar">
+  <button id="undo">取り消し</button>
+  <button id="copy">表をコピー</button>
+  <button id="csv">CSV保存</button>
+  <button id="reset" class="danger">全消去</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const video = $('#video'), guide = $('#guide'), codeEl = $('#code'), addBtn = $('#add'), statusEl = $('#status');
+const RARITIES = ['N', 'R', 'SR', 'UR', 'SE', 'その他'];
+const STORE = 'ygo-scan-v1';
+
+let items = {}, history = [], rarity = 'N', mode = 'auto';
+let worker = null, running = false, paused = false, track = null;
+let lastRead = null, streak = 0, candidate = null, lockCode = null, emptyStreak = 0;
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+let audioCtx = null;
+
+/* 保存 */
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE) || 'null');
+    if (s) { items = s.items || {}; history = s.history || []; rarity = s.rarity || 'N'; mode = s.mode || 'auto'; }
+  } catch (e) {}
+}
+function save() {
+  try { localStorage.setItem(STORE, JSON.stringify({ items, history, rarity, mode })); } catch (e) {}
+}
+
+/* 収録番号の抽出と誤読補正 */
+function parseCode(text) {
+  const t = text.toUpperCase().replace(/\s/g, '').replace(/[‐－―−–—_]/g, '-');
+  const m = t.match(/([A-Z0-9]{2,5})-?JP([0-9OIL]{3})/);
+  if (!m) return null;
+  return `${m[1]}-JP${m[2].replace(/O/g, '0').replace(/[IL]/g, '1')}`;
+}
+
+/* カメラ */
+async function startCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+  });
+  video.srcObject = stream;
+  await video.play();
+  track = stream.getVideoTracks()[0];
+  const caps = track.getCapabilities ? track.getCapabilities() : {};
+  if (caps.torch) $('#torch').hidden = false;
+  if (caps.focusMode && caps.focusMode.includes('continuous')) {
+    track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+  }
+}
+
+/* 枠内だけ切り出して前処理（拡大・グレースケール・明暗自動反転） */
+function grabGuide() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw) return null;
+  const vr = video.getBoundingClientRect(), gr = guide.getBoundingClientRect();
+  const scale = Math.max(vr.width / vw, vr.height / vh);
+  const ox = (vr.width - vw * scale) / 2, oy = (vr.height - vh * scale) / 2;
+  const sx = (gr.left - vr.left - ox) / scale, sy = (gr.top - vr.top - oy) / scale;
+  const sw = gr.width / scale, sh = gr.height / scale;
+  const up = Math.max(1, 700 / sw);
+  canvas.width = Math.round(sw * up); canvas.height = Math.round(sh * up);
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height), d = img.data;
+  const n = d.length / 4, g = new Uint8ClampedArray(n);
+  let min = 255, max = 0, sum = 0;
+  for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+    const v = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+    g[j] = v; sum += v; if (v < min) min = v; if (v > max) max = v;
+  }
+  const invert = sum / n < 110, range = Math.max(1, max - min); // 黒枠カードの白文字対策
+  for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+    let v = (g[j] - min) * 255 / range;
+    if (invert) v = 255 - v;
+    d[i] = d[i + 1] = d[i + 2] = v;
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
+
+async function loop() {
+  if (!running) return;
+  if (!paused) {
+    try {
+      const c = grabGuide();
+      if (c) {
+        const { data: { text } } = await worker.recognize(c);
+        onRead(parseCode(text));
+      }
+    } catch (e) { console.error(e); }
+  }
+  setTimeout(loop, 250);
+}
+
+/* 2回連続で同じ番号が読めたら確定。自動モードでは、枠から外す（空振り2回）まで同じ番号は再加算しない */
+function onRead(code) {
+  if (!code) {
+    emptyStreak++; streak = 0; lastRead = null;
+    if (emptyStreak >= 2) lockCode = null;
+    codeEl.classList.remove('hit'); guide.classList.remove('hit');
+    return;
+  }
+  emptyStreak = 0;
+  streak = code === lastRead ? streak + 1 : 1;
+  lastRead = code;
+  if (streak >= 2) {
+    candidate = code;
+    codeEl.textContent = code;
+    codeEl.classList.add('hit'); guide.classList.add('hit');
+    addBtn.disabled = false;
+    if (mode === 'auto' && code !== lockCode) { addItem(code); lockCode = code; }
+  }
+}
+
+/* 追加・取り消し */
+function addItem(code, r = rarity) {
+  const key = code + '|' + r;
+  if (!items[key]) items[key] = { code, rarity: r, count: 0 };
+  items[key].count++;
+  history.push(key);
+  save(); render();
+  statusEl.textContent = `${code}（${r}）を追加しました`;
+  const row = $('#readRow'); row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
+  if (navigator.vibrate) navigator.vibrate(60);
+  beep();
+}
+function changeCount(key, delta) {
+  if (!items[key]) return;
+  items[key].count += delta;
+  if (delta > 0) history.push(key);
+  else { const i = history.lastIndexOf(key); if (i >= 0) history.splice(i, 1); }
+  if (items[key].count <= 0) delete items[key];
+  save(); render();
+}
+function undo() {
+  const key = history.pop();
+  if (!key || !items[key]) { statusEl.textContent = '取り消せる操作はありません'; return; }
+  items[key].count--;
+  const label = `${items[key].code}（${items[key].rarity}）`;
+  if (items[key].count <= 0) delete items[key];
+  lockCode = null;
+  save(); render();
+  statusEl.textContent = `${label}を1枚取り消しました`;
+}
+function beep() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 1320; g.gain.value = 0.06;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.07);
+  } catch (e) {}
+}
+
+/* 表示 */
+function render() {
+  const list = $('#list'); list.innerHTML = '';
+  const rows = Object.entries(items).sort((a, b) =>
+    a[1].code.localeCompare(b[1].code) || RARITIES.indexOf(a[1].rarity) - RARITIES.indexOf(b[1].rarity));
+  let total = 0;
+  for (const [key, it] of rows) {
+    total += it.count;
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="c"></span><span class="r"></span>
+      <button aria-label="1枚減らす">−</button><span class="n"></span><button aria-label="1枚増やす">＋</button>`;
+    li.querySelector('.c').textContent = it.code;
+    li.querySelector('.r').textContent = it.rarity;
+    li.querySelector('.n').textContent = it.count;
+    const [minus, plus] = li.querySelectorAll('button');
+    minus.onclick = () => changeCount(key, -1);
+    plus.onclick = () => changeCount(key, +1);
+    list.appendChild(li);
+  }
+  $('#total').textContent = `${rows.length}種類 / ${total}枚`;
+  $('#empty').hidden = rows.length > 0;
+  document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === mode));
+  document.querySelectorAll('[data-rarity]').forEach(b => b.setAttribute('aria-pressed', b.dataset.rarity === rarity));
+}
+
+/* 書き出し */
+function tableRows() {
+  return Object.values(items)
+    .sort((a, b) => a.code.localeCompare(b.code))
+    .map(it => [it.code, it.rarity, it.count]);
+}
+async function copyTable() {
+  const tsv = [['収録番号', 'レアリティ', '枚数'], ...tableRows()].map(r => r.join('\t')).join('\n');
+  try { await navigator.clipboard.writeText(tsv); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = tsv; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove();
+  }
+  statusEl.textContent = 'コピーしました。スプレッドシートのA1に貼り付けてください';
+}
+function saveCsv() {
+  const csv = '\uFEFF' + [['収録番号', 'レアリティ', '枚数'], ...tableRows()].map(r => r.join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const d = new Date();
+  a.download = `yugioh_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* 起動 */
+$('#startBtn').onclick = async () => {
+  $('#startBtn').disabled = true;
+  try {
+    await startCamera();
+    $('#start').hidden = true;
+    statusEl.textContent = 'OCRエンジンを読み込んでいます…';
+    worker = await Tesseract.createWorker('eng');
+    await worker.setParameters({
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
+      tessedit_pageseg_mode: '7'
+    });
+    statusEl.textContent = '準備できました。収録番号を枠に合わせてください';
+    running = true; loop();
+  } catch (e) {
+    $('#startBtn').disabled = false;
+    statusEl.textContent = 'カメラを起動できません。ブラウザのカメラ権限を許可し、https のページで開いてください';
+    console.error(e);
+  }
+};
+addBtn.onclick = () => { if (candidate) { addItem(candidate); lockCode = candidate; } };
+$('#pause').onclick = e => {
+  paused = !paused; e.target.setAttribute('aria-pressed', paused);
+  e.target.textContent = paused ? '再開' : '一時停止';
+};
+$('#torch').onclick = async e => {
+  const on = e.target.getAttribute('aria-pressed') !== 'true';
+  try { await track.applyConstraints({ advanced: [{ torch: on }] }); e.target.setAttribute('aria-pressed', on); } catch (err) {}
+};
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { mode = b.dataset.mode; save(); render(); });
+const rw = $('#rarities');
+RARITIES.forEach(r => {
+  const b = document.createElement('button'); b.className = 'chip'; b.dataset.rarity = r; b.textContent = r;
+  b.onclick = () => { rarity = r; save(); render(); };
+  rw.appendChild(b);
+});
+$('#manualAdd').onclick = () => {
+  const v = $('#manualInput').value.trim();
+  if (!v) return;
+  addItem(parseCode(v) || v.toUpperCase());
+  $('#manualInput').value = '';
+};
+$('#undo').onclick = undo;
+$('#copy').onclick = copyTable;
+$('#csv').onclick = saveCsv;
+$('#reset').onclick = () => {
+  if (!confirm('読み取ったカードをすべて消去します。よろしいですか？')) return;
+  items = {}; history = []; lockCode = null; save(); render();
+  statusEl.textContent = 'すべて消去しました';
+};
+
+load(); render();
+</script>
+</body>
+</html>
