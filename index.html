@@ -43,6 +43,7 @@ video{width:100%;height:100%;object-fit:cover;display:block}
 .add{background:var(--gold);color:var(--gold-ink);font-weight:700;font-size:18px;padding:14px 18px;border-radius:12px;min-width:92px}
 .add:disabled{opacity:.35}
 .status{padding:0 16px;font-size:12px;color:var(--mute);min-height:1.4em}
+.raw{padding:2px 16px 0;font:500 15px var(--num);color:var(--mute);min-height:1.4em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .flash{animation:flash .45s ease-out}
 @keyframes flash{from{background:rgba(224,184,74,.35)}to{background:transparent}}
 .opts{padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -93,6 +94,7 @@ li button{background:var(--panel);width:36px;height:36px;border-radius:8px;font-
   <button class="add" id="add" disabled>＋1</button>
 </div>
 <div class="status" id="status">OCRエンジンは初回のみ読み込みに数秒かかります</div>
+<div class="raw" id="raw">OCR：停止中</div>
 <div class="opts" id="zoomRow" hidden>
   <div class="lbl">ズーム（離してピントを合わせ、ズームで大きくします）</div>
   <input type="range" id="zoom" aria-label="ズーム">
@@ -142,9 +144,9 @@ function save() {
 }
 function parseCode(text) {
   const t = text.toUpperCase().replace(/\s/g, '').replace(/[‐－―−–—_]/g, '-');
-  const m = t.match(/([A-Z0-9]{2,5})-?JP([0-9OIL]{3})/);
+  const m = t.match(/([A-Z0-9]{2,5})-?[JI1L|]P([0-9OILDQ]{3})/);
   if (!m) return null;
-  return `${m[1]}-JP${m[2].replace(/O/g, '0').replace(/[IL]/g, '1')}`;
+  return `${m[1]}-JP${m[2].replace(/[ODQ]/g, '0').replace(/[IL]/g, '1')}`;
 }
 async function startCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -196,23 +198,30 @@ function grabGuide() {
   const ox = (vr.width - vw * scale) / 2, oy = (vr.height - vh * scale) / 2;
   const sx = (gr.left - vr.left - ox) / scale, sy = (gr.top - vr.top - oy) / scale;
   const sw = gr.width / scale, sh = gr.height / scale;
-  const up = Math.max(1, 900 / sw);
-  canvas.width = Math.round(sw * up); canvas.height = Math.round(sh * up);
-  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height), d = img.data;
+  const TH = 90, PAD = 30;
+  const w = Math.round(sw * TH / sh), h = TH;
+  canvas.width = w + PAD * 2; canvas.height = h + PAD * 2;
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(video, sx, sy, sw, sh, PAD, PAD, w, h);
+  const img = ctx.getImageData(PAD, PAD, w, h), d = img.data;
   const n = d.length / 4, g = new Uint8ClampedArray(n);
-  let min = 255, max = 0, sum = 0;
+  let sum = 0;
+  const hist = new Uint32Array(256);
   for (let i = 0, j = 0; i < d.length; i += 4, j++) {
     const v = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
-    g[j] = v; sum += v; if (v < min) min = v; if (v > max) max = v;
+    g[j] = v; sum += v; hist[v]++;
   }
-  const invert = sum / n < 110, range = Math.max(1, max - min);
+  let acc = 0, lo = 0, hi = 255;
+  for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= n * 0.02) { lo = v; break; } }
+  acc = 0;
+  for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= n * 0.02) { hi = v; break; } }
+  const invert = sum / n < 110, range = Math.max(1, hi - lo);
   for (let i = 0, j = 0; i < d.length; i += 4, j++) {
-    let v = (g[j] - min) * 255 / range;
+    let v = Math.min(255, Math.max(0, (g[j] - lo) * 255 / range));
     if (invert) v = 255 - v;
     d[i] = d[i + 1] = d[i + 2] = v;
   }
-  ctx.putImageData(img, 0, 0);
+  ctx.putImageData(img, PAD, PAD);
   return canvas;
 }
 async function loop() {
@@ -222,6 +231,7 @@ async function loop() {
       const c = grabGuide();
       if (c) {
         const { data: { text } } = await worker.recognize(c);
+        $('#raw').textContent = 'OCR：' + (text.trim() || '（文字なし）');
         onRead(parseCode(text));
       }
     } catch (e) { console.error(e); }
